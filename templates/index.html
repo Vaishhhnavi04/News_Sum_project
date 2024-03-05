@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>News Articles</title>
+</head>
+<body>
+    <h1>News Summary</h1>
+    <ul>
+        {% for article in articles %}
+        <li>
+            <h2>{{ article.title }}</h2>
+            <a href="{{ article.url }}">Read full article</a>
+            <p><strong>Summary:</strong></p>
+            <p>{{ article.summary }}</p>
+            <p><strong>Simplified Article:</strong></p>
+            <p>{{ article.simplified_article }}</p>
+        </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>
