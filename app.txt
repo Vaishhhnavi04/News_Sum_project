@@ -1,0 +1,118 @@
+import streamlit as st
+from langchain.agents.react.base import DocstoreExplorer
+from langchain import OpenAI, PromptTemplate, LLMChain
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.chains.mapreduce import MapReduceChain
+from langchain.prompts import PromptTemplate
+from langchain.chat_models import AzureChatOpenAI
+
+from langchain.docstore.document import Document
+from langchain.chains.summarize import load_summarize_chain
+
+# Import necessary libraries
+import openai
+import platform
+import os
+import pandas as pd
+
+import nltk
+nltk.download('punkt')
+from nltk.tokenize import word_tokenize
+
+AZURE_BASE_URL = "https://openai-lh.openai.azure.com/openai"
+AZURE_OPENAI_API_KEY = "312ff50d6d954023b8748232617327b6"
+
+llm = AzureChatOpenAI(
+    openai_api_base=AZURE_BASE_URL,
+    openai_api_version="2023-06-01-preview",
+    deployment_name="LH-GPT",
+    openai_api_key=AZURE_OPENAI_API_KEY,
+    openai_api_type="azure",
+    temperature=0.0,
+    # max_tokens=500,
+    # top_p=1.0,
+    frequency_penalty=0.5,
+    presence_penalty=0.5,
+    # stop=['\n\n###\n\n'], # The ending token used during inference. Once it reaches this token, GPT-3 knows the completion is over.
+    # best_of=1,
+    top_p=1 # Default is 0.5
+)
+
+def summarize_text(text_content):
+
+    text_splitter = CharacterTextSplitter(chunk_size = 500, chunk_overlap = 0)
+    texts = text_splitter.split_text(text_content)
+
+    # Create Document objects
+    docs = [Document(page_content=t) for t in texts[:3]]
+
+    # Prompt template for initial summary
+    prompt_template = """Write a concise summary along with extracted keywords of the following:
+
+    {text}
+    CONCISE SUMMARY:
+    
+    --------------------------
+    EXTRACTION:
+    Extract the important keywords from the summary and categorize them in the format.
+    Category: Extracted keywords
+    
+    Example:
+    Company: Amazon, OpenAI
+    Languages: Javascript, SQL
+
+    """
+
+    PROMPT = PromptTemplate(template=prompt_template, input_variables=["text"])
+
+    # Template for refining summary
+    refine_template = (
+        "Your job is to produce a final summary\n"
+        "We have provided an existing summary up to a certain point: {existing_answer}\n"
+        "We have the opportunity to refine the existing summary\n"
+        "(only if needed) with some more context below.\n"
+        "--\n"
+        "{text}\n"
+        "----\n"
+        "Given the new context, refine the original summary. Make sure to address the list of problems, list c\n"
+        "If the context isn't useful, return the original summary.\n"
+    )
+
+    refine_prompt = PromptTemplate(
+        input_variables=["existing_answer", "text"],
+        template=refine_template,
+    )
+
+    # Load summarization chain
+    chain = load_summarize_chain(llm, 
+                                 chain_type="refine", 
+                                 return_intermediate_steps=False, 
+                                 question_prompt=PROMPT,  
+                                 refine_prompt=refine_prompt
+                                 )
+
+    # Summarize documents
+    result = chain({"input_documents": docs}, return_only_outputs=True)
+    return result
+
+def load_text_file(file_path):
+    df = pd.read_csv(file_path)
+    top_5 = df["Content"].iloc[:1] #Passing only the top row Content as it is showing token limit exceeded.
+    text_content = ", ".join(top_5.astype(str))
+    return text_content
+
+st.title("AI Newspaper Summarizer")
+newspapers = ["ET", "Deccan_Herald", "TOI", "Google"]
+# user_search = st.text_input('Enter your search term:')
+
+text_content = None
+
+for i, newspaper in enumerate(newspapers, start = 1):
+    if st.button(newspaper):
+        text_content = load_text_file(f'data/file_{i}.csv')
+        if text_content is not None:
+            st.success('Loaded scrapped text!')
+            summary = summarize_text(text_content)
+            st.write(summary)
+    # else:
+    #     st.error('No text file loaded. Please load a text file first by clicking one of the newspaper buttons.')
